@@ -43,6 +43,13 @@ let compressor;
 let delay;
 let delayFeedback;
 let delayWet;
+let saturation;
+let reverb;
+let reverbWet;
+let chorusDelay;
+let chorusWet;
+let chorusLfo;
+let chorusDepth;
 let noiseBuffer;
 let schedulerTimer;
 let visualTimer;
@@ -77,6 +84,28 @@ function createNoiseBuffer() {
   return buffer;
 }
 
+function createReverbBuffer(seconds = 2.2) {
+  const length = Math.floor(audio.sampleRate * seconds);
+  const buffer = audio.createBuffer(2, length, audio.sampleRate);
+  for (let channel = 0; channel < 2; channel += 1) {
+    const data = buffer.getChannelData(channel);
+    for (let index = 0; index < length; index += 1) {
+      const decay = (1 - index / length) ** 2.8;
+      data[index] = (Math.random() * 2 - 1) * decay;
+    }
+  }
+  return buffer;
+}
+
+function saturationCurve(amount = 1.8) {
+  const curve = new Float32Array(2048);
+  for (let index = 0; index < curve.length; index += 1) {
+    const value = index * 2 / (curve.length - 1) - 1;
+    curve[index] = Math.tanh(value * amount) / Math.tanh(amount);
+  }
+  return curve;
+}
+
 function setupAudio() {
   audio = new AudioContext();
   musicBus = audio.createGain();
@@ -86,6 +115,13 @@ function setupAudio() {
   delay = audio.createDelay(.6);
   delayFeedback = audio.createGain();
   delayWet = audio.createGain();
+  saturation = audio.createWaveShaper();
+  reverb = audio.createConvolver();
+  reverbWet = audio.createGain();
+  chorusDelay = audio.createDelay(.05);
+  chorusWet = audio.createGain();
+  chorusLfo = audio.createOscillator();
+  chorusDepth = audio.createGain();
 
   toneFilter.type = "lowpass";
   compressor.threshold.value = -22;
@@ -96,10 +132,22 @@ function setupAudio() {
   delay.delayTime.value = .24;
   delayFeedback.gain.value = .16;
   delayWet.gain.value = .12;
+  saturation.curve = saturationCurve();
+  saturation.oversample = "4x";
+  reverb.buffer = createReverbBuffer();
+  reverbWet.gain.value = .1;
+  chorusDelay.delayTime.value = .018;
+  chorusWet.gain.value = .07;
+  chorusLfo.frequency.value = .23;
+  chorusDepth.gain.value = .004;
 
-  musicBus.connect(toneFilter).connect(compressor).connect(master).connect(audio.destination);
+  musicBus.connect(toneFilter).connect(saturation).connect(compressor).connect(master).connect(audio.destination);
   musicBus.connect(delay).connect(delayWet).connect(toneFilter);
   delay.connect(delayFeedback).connect(delay);
+  musicBus.connect(reverb).connect(reverbWet).connect(compressor);
+  musicBus.connect(chorusDelay).connect(chorusWet).connect(toneFilter);
+  chorusLfo.connect(chorusDepth).connect(chorusDelay.delayTime);
+  chorusLfo.start();
   noiseBuffer = createNoiseBuffer();
   updateMix();
 }
@@ -108,76 +156,137 @@ function updateMix() {
   if (!audio) return;
   const now = audio.currentTime;
   const volume = Number(ui.volume.value) / 100;
-  master.gain.setTargetAtTime(volume * .42, now, .04);
+  master.gain.setTargetAtTime(volume * .32, now, .04);
   toneFilter.frequency.setTargetAtTime(focusMix ? 3600 : 8800, now, .08);
-  delayWet.gain.setTargetAtTime(focusMix ? .08 : .15, now, .08);
+  delayWet.gain.setTargetAtTime(focusMix ? .045 : .1, now, .08);
+  reverbWet.gain.setTargetAtTime(focusMix ? .055 : .11, now, .08);
+  chorusWet.gain.setTargetAtTime(focusMix ? .04 : .075, now, .08);
+}
+
+function voiceProfile(style, layer, fallbackWave) {
+  const profiles = {
+    synthwave: {
+      pad: [["sawtooth", 0, -9, .42], ["sawtooth", 0, 9, .42], ["triangle", -12, 0, .2]],
+      bass: [["sawtooth", 0, 0, .62], ["square", -12, 0, .32]],
+      pluck: [["sawtooth", 0, -4, .7], ["square", 12, 3, .22]],
+      lead: [["sawtooth", 0, -6, .48], ["sawtooth", 0, 6, .48]],
+      accent: [["sawtooth", 0, -7, .45], ["sawtooth", 0, 7, .45], ["square", 12, 0, .14]]
+    },
+    chiptune: {
+      pad: [["triangle", 0, 0, .68], ["square", 12, 0, .16]],
+      bass: [["triangle", 0, 0, .75], ["square", -12, 0, .2]],
+      pluck: [["square", 0, 0, .82], ["triangle", 12, 0, .16]],
+      lead: [["square", 0, 0, .7], ["triangle", 12, 0, .24]],
+      accent: [["square", 0, 0, .7], ["square", 12, 0, .18]]
+    },
+    fm: {
+      pad: [["sine", 0, 0, 1]], bass: [["sine", 0, 0, 1]],
+      pluck: [["sine", 0, 0, 1]], lead: [["sine", 0, 0, 1]], accent: [["sine", 0, 0, 1]]
+    },
+    italo: {
+      pad: [["sawtooth", 0, -12, .38], ["sawtooth", 0, 12, .38], ["triangle", 12, 0, .16]],
+      bass: [["square", 0, 0, .56], ["sawtooth", -12, -3, .34]],
+      pluck: [["sawtooth", 0, -5, .58], ["square", 12, 4, .24]],
+      lead: [["sawtooth", 0, -8, .43], ["sawtooth", 0, 8, .43], ["square", 12, 0, .12]],
+      accent: [["sawtooth", 0, -9, .4], ["sawtooth", 0, 9, .4], ["square", 12, 0, .16]]
+    }
+  };
+  return profiles[style]?.[layer] || [[fallbackWave || "triangle", 0, 0, 1]];
 }
 
 function synth(note, when, duration, options = {}) {
   if (!audio) return;
-  const oscillator = audio.createOscillator();
   const amp = audio.createGain();
   const filter = audio.createBiquadFilter();
+  const panner = audio.createStereoPanner();
+  const mixer = audio.createGain();
   const attack = options.attack ?? .012;
   const release = options.release ?? .12;
   const level = options.gain ?? .025;
-  const hasTwin = ["synthwave", "italo"].includes(activeStyle) && options.wave === "sawtooth";
+  const layer = options.layer || "lead";
+  const profile = voiceProfile(activeStyle, layer, options.wave);
+  const oscillators = [];
 
-  oscillator.type = options.wave || "triangle";
-  oscillator.frequency.setValueAtTime(midi(note), when);
-  oscillator.detune.value = options.detune || 0;
   filter.type = "lowpass";
-  filter.frequency.value = options.cutoff || (focusMix ? 1800 : 4200);
+  const cutoff = options.cutoff || (focusMix ? 1800 : 4200);
+  filter.frequency.setValueAtTime(Math.max(90, cutoff * .38), when);
+  filter.frequency.exponentialRampToValueAtTime(cutoff, when + attack + .045);
+  filter.frequency.exponentialRampToValueAtTime(Math.max(90, cutoff * .48), when + duration);
   filter.Q.value = options.resonance || .5;
+  panner.pan.value = options.pan ?? Math.max(-.45, Math.min(.45, ((note % 7) - 3) * .1));
   amp.gain.setValueAtTime(.0001, when);
-  const voiceLevel = hasTwin ? level * .68 : level;
-  amp.gain.exponentialRampToValueAtTime(voiceLevel, when + attack);
-  amp.gain.setValueAtTime(voiceLevel, Math.max(when + attack, when + duration - release));
+  amp.gain.exponentialRampToValueAtTime(level, when + attack);
+  amp.gain.setValueAtTime(level, Math.max(when + attack, when + duration - release));
   amp.gain.exponentialRampToValueAtTime(.0001, when + duration);
-  oscillator.connect(filter).connect(amp).connect(musicBus);
-  oscillator.start(when);
-  oscillator.stop(when + duration + .03);
+  mixer.connect(filter).connect(amp).connect(panner).connect(musicBus);
 
-  if (hasTwin) {
-    const twin = audio.createOscillator();
-    twin.type = oscillator.type;
-    twin.frequency.setValueAtTime(midi(note), when);
-    twin.detune.value = (options.detune || 0) + (focusMix ? 4 : 8);
-    twin.connect(filter);
-    twin.start(when);
-    twin.stop(when + duration + .03);
+  for (const [wave, octave, detune, weight] of profile) {
+    const oscillator = audio.createOscillator();
+    const oscillatorGain = audio.createGain();
+    oscillator.type = wave;
+    oscillator.frequency.setValueAtTime(midi(note + octave), when);
+    oscillator.detune.value = detune + (options.detune || 0);
+    oscillatorGain.gain.value = weight;
+    oscillator.connect(oscillatorGain).connect(mixer);
+    oscillator.start(when);
+    oscillator.stop(when + duration + .04);
+    oscillators.push(oscillator);
+
+    if (activeStyle === "fm" && wave === "sine") {
+      const modulator = audio.createOscillator();
+      const modulation = audio.createGain();
+      const ratio = layer === "bass" ? 1 : layer === "pad" ? .5 : options.fmRatio || 2;
+      const index = layer === "pluck" ? 1.5 : layer === "lead" ? 1.1 : .48;
+      modulator.type = "sine";
+      modulator.frequency.setValueAtTime(midi(note + octave) * ratio, when);
+      modulation.gain.setValueAtTime(midi(note + octave) * index * (focusMix ? .55 : 1), when);
+      modulation.gain.exponentialRampToValueAtTime(.001, when + duration);
+      modulator.connect(modulation).connect(oscillator.frequency);
+      modulator.start(when);
+      modulator.stop(when + duration + .04);
+    }
   }
 
-  if (activeStyle === "fm" && oscillator.type === "sine") {
-    const modulator = audio.createOscillator();
-    const modulation = audio.createGain();
-    modulator.type = "sine";
-    modulator.frequency.setValueAtTime(midi(note) * (options.fmRatio || 2), when);
-    modulation.gain.setValueAtTime(midi(note) * (focusMix ? .32 : .7), when);
-    modulation.gain.exponentialRampToValueAtTime(.001, when + duration);
-    modulator.connect(modulation).connect(oscillator.frequency);
-    modulator.start(when);
-    modulator.stop(when + duration + .03);
+  if (["lead", "pad"].includes(layer)) {
+    const vibrato = audio.createOscillator();
+    const vibratoDepth = audio.createGain();
+    vibrato.frequency.value = layer === "pad" ? .35 : 5.1;
+    vibratoDepth.gain.value = layer === "pad" ? 2.2 : 5;
+    oscillators.forEach(oscillator => vibratoDepth.connect(oscillator.detune));
+    vibrato.connect(vibratoDepth);
+    vibrato.start(when);
+    vibrato.stop(when + duration + .04);
   }
 }
 
 function kick(when, level = 1) {
   const oscillator = audio.createOscillator();
+  const sub = audio.createOscillator();
   const amp = audio.createGain();
+  const subAmp = audio.createGain();
   oscillator.type = "sine";
-  oscillator.frequency.setValueAtTime(125, when);
-  oscillator.frequency.exponentialRampToValueAtTime(48, when + .11);
-  amp.gain.setValueAtTime(.1 * level, when);
-  amp.gain.exponentialRampToValueAtTime(.0001, when + .22);
+  sub.type = "triangle";
+  oscillator.frequency.setValueAtTime(150, when);
+  oscillator.frequency.exponentialRampToValueAtTime(52, when + .1);
+  sub.frequency.setValueAtTime(62, when);
+  sub.frequency.exponentialRampToValueAtTime(42, when + .18);
+  amp.gain.setValueAtTime(.085 * level, when);
+  amp.gain.exponentialRampToValueAtTime(.0001, when + .24);
+  subAmp.gain.setValueAtTime(.035 * level, when);
+  subAmp.gain.exponentialRampToValueAtTime(.0001, when + .3);
   oscillator.connect(amp).connect(musicBus);
+  sub.connect(subAmp).connect(musicBus);
   oscillator.start(when);
+  sub.start(when);
   oscillator.stop(when + .23);
+  sub.stop(when + .31);
 }
 
 function noiseHit(when, type) {
   const source = audio.createBufferSource();
   const filter = audio.createBiquadFilter();
   const amp = audio.createGain();
+  const panner = audio.createStereoPanner();
   source.buffer = noiseBuffer;
   filter.type = "highpass";
   filter.frequency.value = type === "hat" ? 6200 : 1500;
@@ -185,9 +294,22 @@ function noiseHit(when, type) {
   const level = type === "hat" ? (focusMix ? .008 : .015) : (focusMix ? .018 : .032);
   amp.gain.setValueAtTime(level, when);
   amp.gain.exponentialRampToValueAtTime(.0001, when + duration);
-  source.connect(filter).connect(amp).connect(musicBus);
+  panner.pan.value = type === "hat" ? .28 : -.12;
+  source.connect(filter).connect(amp).connect(panner).connect(musicBus);
   source.start(when);
   source.stop(when + duration);
+  if (type === "snare") {
+    const tone = audio.createOscillator();
+    const toneAmp = audio.createGain();
+    tone.type = "triangle";
+    tone.frequency.setValueAtTime(190, when);
+    tone.frequency.exponentialRampToValueAtTime(118, when + .1);
+    toneAmp.gain.setValueAtTime(focusMix ? .012 : .02, when);
+    toneAmp.gain.exponentialRampToValueAtTime(.0001, when + .14);
+    tone.connect(toneAmp).connect(panner);
+    tone.start(when);
+    tone.stop(when + .15);
+  }
 }
 
 function variation(bar, salt = 0) {
@@ -215,6 +337,7 @@ function scheduleAccent(when, preset, chord) {
     ? [chord[0] - 12, chord[1] - 13]
     : chord.map((note, index) => note + 12 + (accent.type === "deploy" && index === 2 ? 12 : 0));
   notes.forEach((note, index) => synth(note, when + index * .055, .42, {
+    layer: "accent",
     wave: tense ? "triangle" : preset.lead,
     gain: gain * accent.intensity,
     attack: .025,
@@ -284,6 +407,7 @@ function scheduleStep(step, when) {
     ui.conductor.textContent = conductorLabel();
     const padDuration = sixteenth * 15.4;
     chord.forEach((note, index) => synth(note, when + index * .012, padDuration, {
+      layer: "pad",
       wave: preset.pad,
       gain: focusMix ? .009 : .013,
       attack: focusMix ? .28 : .16,
@@ -312,6 +436,7 @@ function scheduleStep(step, when) {
   if (bassHit) {
     const bassDegree = degree + bassHit[1];
     synth(scaleNote(preset, bassDegree, -12), when, sixteenth * 2.5, {
+      layer: "bass",
       wave: preset.bass,
       gain: focusMix ? .027 : .04,
       attack: .008,
@@ -332,6 +457,7 @@ function scheduleStep(step, when) {
   if (!isBreakdown && !leaveSpace && beat % arpRate === 0) {
     const note = chord[arpPattern[Math.floor(beat / arpRate) % arpPattern.length]] + 12;
     synth(note, when, sixteenth * (focusMix ? 2.8 : 1.5), {
+      layer: "pluck",
       wave: preset.lead,
       gain: focusMix ? .009 : .016 + energy * .006,
       attack: .015,
@@ -347,6 +473,7 @@ function scheduleStep(step, when) {
   if ((!focusMix || isClimax) && energy > .58 && !isBreakdown && melodyIndex >= 0) {
     const melodyDegree = degree + melodyDegrees[motif][melodyIndex] + conductor.motif;
     synth(scaleNote(preset, melodyDegree, 12), when, sixteenth * 3.2, {
+      layer: "lead",
       wave: preset.lead, gain: .017, attack: .035, release: .2, cutoff: 5200
     });
   }

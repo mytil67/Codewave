@@ -88,6 +88,8 @@ The browser schedules audio ahead of time on a sixteenth-note grid for stable ti
 
 The conductor remembers musical context across events. Errors create tension that decays over several bars, green tests resolve it, commits rotate the recurring motif, file changes alter harmonic color, and deployments trigger a four-bar climax. FM uses carrier/modulator synthesis, while Synthwave and Italo voices use subtle detuning for width.
 
+The sound engine gives pads, basses, plucks, leads and accents their own multi-oscillator voice architecture in every style. Filter envelopes, stereo placement, vibrato and style-specific FM operators feed a master chain with chorus, tempo delay, convolution reverb, soft saturation and compression. Drums combine synthesized bodies with filtered noise instead of relying on bare clicks.
+
 **Focus Mix** is enabled by default. It softens high frequencies, reduces percussion and melodic density, and smooths envelopes. It can be toggled at any time, and the master volume is always available beside the play control.
 
 ## Roadmap
