@@ -94,6 +94,8 @@ Synthwave uses custom band-limited analog waves, wide detuned pads, a rounded su
 
 **Focus Mix** is enabled by default. It softens high frequencies, reduces percussion and melodic density, and smooths envelopes. It can be toggled at any time, and the master volume is always available beside the play control.
 
+Stopping playback closes the current Web Audio context so scheduled notes cannot return on the next start. Codewave also keeps only one local browser tab playing at a time: starting the station in another tab automatically stops the first one.
+
 ## Roadmap
 
 - Adapters for Claude Code, Cursor, Git and test runners

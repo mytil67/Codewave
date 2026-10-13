@@ -62,6 +62,10 @@ let pendingStyle;
 let pendingAccent;
 const conductor = { tension: 0, celebration: 0, motif: 0, climaxBars: 0, color: 0 };
 let focusMix = localStorage.getItem("codewave-focus") !== "off";
+let isPlaying = false;
+let playbackBusy = false;
+const playbackId = crypto.randomUUID?.() ?? Math.random().toString(36).slice(2);
+const playbackChannel = "BroadcastChannel" in window ? new BroadcastChannel("codewave-playback") : undefined;
 
 for (let i = 0; i < 48; i += 1) {
   const bar = document.createElement("i");
@@ -557,6 +561,31 @@ function stopSequencer() {
   clearInterval(visualTimer);
 }
 
+function renderPlayback(playing) {
+  ui.play.classList.toggle("active", playing);
+  ui.visualizer.classList.toggle("playing", playing);
+  ui.play.querySelector(".play-icon").textContent = playing ? "Ⅱ" : "▶";
+  ui.playLabel.textContent = playing ? "The coding session is live" : "Resume the live session";
+}
+
+async function startPlayback() {
+  playbackChannel?.postMessage({ type: "claim", id: playbackId });
+  setupAudio();
+  await audio.resume();
+  isPlaying = true;
+  startSequencer();
+  renderPlayback(true);
+}
+
+async function stopPlayback() {
+  isPlaying = false;
+  stopSequencer();
+  const context = audio;
+  audio = undefined;
+  renderPlayback(false);
+  if (context && context.state !== "closed") await context.close();
+}
+
 function renderFocus() {
   ui.focus.setAttribute("aria-pressed", String(focusMix));
   ui.focus.classList.toggle("active", focusMix);
@@ -586,22 +615,22 @@ function escapeHtml(value) {
 }
 
 ui.play.addEventListener("click", async () => {
-  if (!audio) {
-    setupAudio();
-    await audio.resume();
-    startSequencer();
-  } else if (audio.state === "running") {
-    await audio.suspend();
-    stopSequencer();
-  } else {
-    await audio.resume();
-    startSequencer();
+  if (playbackBusy) return;
+  playbackBusy = true;
+  ui.play.disabled = true;
+  try {
+    if (isPlaying) await stopPlayback();
+    else await startPlayback();
+  } finally {
+    playbackBusy = false;
+    ui.play.disabled = false;
   }
-  const playing = audio.state === "running";
-  ui.play.classList.toggle("active", playing);
-  ui.visualizer.classList.toggle("playing", playing);
-  ui.play.querySelector(".play-icon").textContent = playing ? "Ⅱ" : "▶";
-  ui.playLabel.textContent = playing ? "The coding session is live" : "Resume the live session";
+});
+
+playbackChannel?.addEventListener("message", event => {
+  if (event.data?.type === "claim" && event.data.id !== playbackId && isPlaying) {
+    void stopPlayback();
+  }
 });
 
 ui.focus.addEventListener("click", () => {
@@ -620,7 +649,7 @@ stream.addEventListener("codewave", message => {
   const previousStyle = station.style;
   station = JSON.parse(message.data).state;
   render();
-  if (audio?.state === "running") {
+  if (isPlaying && audio?.state === "running") {
     if (station.style !== previousStyle) pendingStyle = station.style;
     const event = station.recentEvents.at(-1);
     conduct(event);
@@ -632,4 +661,10 @@ stream.addEventListener("codewave", message => {
 
 renderFocus();
 fetch("/api/state").then(response => response.json()).then(value => { station = value; render(); });
+
+addEventListener("pagehide", () => {
+  stopSequencer();
+  playbackChannel?.close();
+  if (audio?.state !== "closed") void audio?.close();
+});
 
