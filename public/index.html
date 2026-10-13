@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#090718" />
+    <meta name="description" content="Codewave turns coding sessions into a live retro-futuristic radio." />
+    <title>Codewave — Coding on air</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="noise"></div>
+    <header>
+      <a class="brand" href="/" aria-label="Codewave home">
+        <span class="brand-mark">CW</span>
+        <span>CODEWAVE</span>
+      </a>
+      <div class="live-pill"><span></span> LIVE SIGNAL</div>
+    </header>
+
+    <main>
+      <section class="hero">
+        <div class="eyebrow">SESSION 001 / NIGHT SHIFT</div>
+        <h1>YOUR CODE.<br /><em>ON AIR.</em></h1>
+        <p class="lede">A generative radio that turns commits, tests, errors and flow states into an endless retro-futuristic soundtrack.</p>
+        <button id="play" class="play" type="button">
+          <span class="play-icon">▶</span>
+          <span><small>START LISTENING</small><strong id="play-label">Tune into the live session</strong></span>
+        </button>
+      </section>
+
+      <section class="console" aria-label="Live station console">
+        <div class="console-top">
+          <div>
+            <span class="label">NOW PLAYING</span>
+            <h2 id="track">Midnight Compile</h2>
+            <p><span id="style">SYNTHWAVE</span> · <span id="bpm">104</span> BPM</p>
+          </div>
+          <div class="listeners"><strong id="listeners">1</strong><span>LISTENERS</span></div>
+        </div>
+
+        <div id="visualizer" class="visualizer" aria-hidden="true"></div>
+
+        <div class="meter-row">
+          <span>SESSION ENERGY</span>
+          <div class="meter"><i id="energy"></i></div>
+          <strong id="energy-label">42%</strong>
+        </div>
+
+        <div class="event-feed">
+          <div class="feed-title"><span>LIVE CODE FEED</span><span class="privacy">◈ METADATA ONLY</span></div>
+          <ol id="events"><li class="empty">Waiting for the first coding event…</li></ol>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <span>CODE → EVENTS → MUSIC</span>
+      <a href="https://github.com/mytil67/Codewave" target="_blank" rel="noreferrer">VIEW SOURCE ↗</a>
+    </footer>
+    <script type="module" src="/app.js?v=1"></script>
+  </body>
+</html>
+

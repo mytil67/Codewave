@@ -1,0 +1,17 @@
+{
+  "name": "codewave",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Turn coding sessions into a live retro-futuristic web radio.",
+  "scripts": {
+    "dev": "node --watch src/server.mjs",
+    "start": "node src/server.mjs",
+    "demo": "node scripts/demo-session.mjs",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
+
