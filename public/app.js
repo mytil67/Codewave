@@ -24,6 +24,7 @@ const ui = {
   style: document.getElementById("style"),
   bpm: document.getElementById("bpm"),
   scene: document.getElementById("scene"),
+  conductor: document.getElementById("conductor"),
   listeners: document.getElementById("listeners"),
   visualizer: document.getElementById("visualizer"),
   energy: document.getElementById("energy"),
@@ -50,6 +51,7 @@ let sequenceStep = 0;
 let activeStyle = "synthwave";
 let pendingStyle;
 let pendingAccent;
+const conductor = { tension: 0, celebration: 0, motif: 0, climaxBars: 0, color: 0 };
 let focusMix = localStorage.getItem("codewave-focus") !== "off";
 
 for (let i = 0; i < 48; i += 1) {
@@ -119,6 +121,7 @@ function synth(note, when, duration, options = {}) {
   const attack = options.attack ?? .012;
   const release = options.release ?? .12;
   const level = options.gain ?? .025;
+  const hasTwin = ["synthwave", "italo"].includes(activeStyle) && options.wave === "sawtooth";
 
   oscillator.type = options.wave || "triangle";
   oscillator.frequency.setValueAtTime(midi(note), when);
@@ -127,12 +130,35 @@ function synth(note, when, duration, options = {}) {
   filter.frequency.value = options.cutoff || (focusMix ? 1800 : 4200);
   filter.Q.value = options.resonance || .5;
   amp.gain.setValueAtTime(.0001, when);
-  amp.gain.exponentialRampToValueAtTime(level, when + attack);
-  amp.gain.setValueAtTime(level, Math.max(when + attack, when + duration - release));
+  const voiceLevel = hasTwin ? level * .68 : level;
+  amp.gain.exponentialRampToValueAtTime(voiceLevel, when + attack);
+  amp.gain.setValueAtTime(voiceLevel, Math.max(when + attack, when + duration - release));
   amp.gain.exponentialRampToValueAtTime(.0001, when + duration);
   oscillator.connect(filter).connect(amp).connect(musicBus);
   oscillator.start(when);
   oscillator.stop(when + duration + .03);
+
+  if (hasTwin) {
+    const twin = audio.createOscillator();
+    twin.type = oscillator.type;
+    twin.frequency.setValueAtTime(midi(note), when);
+    twin.detune.value = (options.detune || 0) + (focusMix ? 4 : 8);
+    twin.connect(filter);
+    twin.start(when);
+    twin.stop(when + duration + .03);
+  }
+
+  if (activeStyle === "fm" && oscillator.type === "sine") {
+    const modulator = audio.createOscillator();
+    const modulation = audio.createGain();
+    modulator.type = "sine";
+    modulator.frequency.setValueAtTime(midi(note) * (options.fmRatio || 2), when);
+    modulation.gain.setValueAtTime(midi(note) * (focusMix ? .32 : .7), when);
+    modulation.gain.exponentialRampToValueAtTime(.001, when + duration);
+    modulator.connect(modulation).connect(oscillator.frequency);
+    modulator.start(when);
+    modulator.stop(when + duration + .03);
+  }
 }
 
 function kick(when, level = 1) {
@@ -184,14 +210,52 @@ function scheduleAccent(when, preset, chord) {
   const accent = pendingAccent;
   pendingAccent = null;
   const gain = focusMix ? .018 : .03;
-  const notes = accent.type === "error" ? [chord[0] - 12, chord[1] - 12] : chord.map(note => note + 12);
+  const tense = ["error", "test_fail"].includes(accent.type);
+  const notes = tense
+    ? [chord[0] - 12, chord[1] - 13]
+    : chord.map((note, index) => note + 12 + (accent.type === "deploy" && index === 2 ? 12 : 0));
   notes.forEach((note, index) => synth(note, when + index * .055, .42, {
-    wave: accent.type === "error" ? "triangle" : preset.lead,
+    wave: tense ? "triangle" : preset.lead,
     gain: gain * accent.intensity,
     attack: .025,
     release: .22,
     cutoff: focusMix ? 1900 : 5000
   }));
+}
+
+function conductorLabel() {
+  if (conductor.climaxBars > 0) return "CLIMAX";
+  if (conductor.tension > .42) return "TENSION";
+  if (conductor.celebration > .28) return "RESOLUTION";
+  return "FLOW";
+}
+
+function conduct(event) {
+  switch (event.type) {
+    case "error":
+    case "test_fail":
+      conductor.tension = 1;
+      conductor.celebration = 0;
+      break;
+    case "test_pass":
+      conductor.tension *= .2;
+      conductor.celebration = 1;
+      break;
+    case "commit":
+      conductor.motif = (conductor.motif + 1) % 4;
+      conductor.celebration = Math.max(conductor.celebration, .65);
+      break;
+    case "deploy":
+      conductor.motif = (conductor.motif + 1) % 4;
+      conductor.climaxBars = 4;
+      conductor.celebration = 1;
+      conductor.tension = 0;
+      break;
+    case "file":
+      conductor.color = (conductor.color + 1) % 3;
+      break;
+  }
+  ui.conductor.textContent = conductorLabel();
 }
 
 function scheduleStep(step, when) {
@@ -204,16 +268,20 @@ function scheduleStep(step, when) {
   const bar = Math.floor(step / 16);
   const section = Math.floor((bar % 16) / 4);
   const progression = preset.progressions[section];
-  const degree = progression[bar % 4];
-  const inversion = focusMix ? bar % 2 : Math.floor(variation(bar, 1) * 3);
+  let degree = progression[bar % 4];
+  if (conductor.tension > .55 && bar % 4 === 3) degree += 1;
+  const inversion = focusMix ? (bar + conductor.color) % 2 : Math.floor(variation(bar, 1 + conductor.color) * 3);
   const chord = chordNotes(preset, degree, inversion);
+  if (conductor.tension > .42) chord[1] -= 1;
   const sixteenth = 60 / preset.bpm / 4;
   const energy = station.energy;
   const isBreakdown = section === 3 && bar % 4 < 2;
   const isLift = section === 2;
+  const isClimax = conductor.climaxBars > 0;
 
   if (beat === 0) {
     ui.scene.textContent = sceneForBar(bar);
+    ui.conductor.textContent = conductorLabel();
     const padDuration = sixteenth * 15.4;
     chord.forEach((note, index) => synth(note, when + index * .012, padDuration, {
       wave: preset.pad,
@@ -227,7 +295,7 @@ function scheduleStep(step, when) {
 
   if (beat % 4 === 0 && (!isBreakdown || beat === 0)) kick(when, focusMix ? .68 : .9);
   if (!isBreakdown && (beat === 4 || beat === 12) && energy > .25) noiseHit(when, "snare");
-  const hatRate = focusMix ? 4 : isLift ? 1 : 2;
+  const hatRate = focusMix ? (isClimax ? 2 : 4) : isLift || isClimax ? 1 : 2;
   if (!isBreakdown && beat % hatRate === 2 % hatRate && energy > .32) noiseHit(when, "hat");
 
   const bassPatterns = [
@@ -259,7 +327,7 @@ function scheduleStep(step, when) {
     [0, 1, 0, 2, 1, 2, 0, 1]
   ];
   const arpRate = focusMix ? 4 : energy > .68 || isLift ? 1 : 2;
-  const arpPattern = arpPatterns[Math.floor(variation(bar, 3) * arpPatterns.length)];
+  const arpPattern = arpPatterns[(Math.floor(variation(bar, 3) * arpPatterns.length) + conductor.motif) % arpPatterns.length];
   const leaveSpace = variation(bar * 16 + beat, 4) < (focusMix ? .22 : .1);
   if (!isBreakdown && !leaveSpace && beat % arpRate === 0) {
     const note = chord[arpPattern[Math.floor(beat / arpRate) % arpPattern.length]] + 12;
@@ -276,8 +344,8 @@ function scheduleStep(step, when) {
   const melodyDegrees = [[4, 6], [2, 4, 6], [5, 3, 6], [4, 2]];
   const motif = Math.floor(variation(bar, 5) * melodyPositions.length);
   const melodyIndex = melodyPositions[motif].indexOf(beat);
-  if (!focusMix && energy > .58 && !isBreakdown && melodyIndex >= 0) {
-    const melodyDegree = degree + melodyDegrees[motif][melodyIndex];
+  if ((!focusMix || isClimax) && energy > .58 && !isBreakdown && melodyIndex >= 0) {
+    const melodyDegree = degree + melodyDegrees[motif][melodyIndex] + conductor.motif;
     synth(scaleNote(preset, melodyDegree, 12), when, sixteenth * 3.2, {
       wave: preset.lead, gain: .017, attack: .035, release: .2, cutoff: 5200
     });
@@ -290,6 +358,11 @@ function scheduleStep(step, when) {
   }
 
   if (beat % 4 === 0) scheduleAccent(when, preset, chord);
+  if (beat === 15) {
+    conductor.tension *= .78;
+    conductor.celebration *= .7;
+    if (conductor.climaxBars > 0) conductor.climaxBars -= 1;
+  }
 }
 
 function scheduler() {
@@ -392,6 +465,7 @@ stream.addEventListener("codewave", message => {
   if (audio?.state === "running") {
     if (station.style !== previousStyle) pendingStyle = station.style;
     const event = station.recentEvents.at(-1);
+    conduct(event);
     if (["commit", "deploy", "test_pass", "test_fail", "error"].includes(event.type)) {
       pendingAccent = { type: event.type, intensity: event.intensity };
     }

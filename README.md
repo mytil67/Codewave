@@ -86,6 +86,8 @@ The current radio is event-synchronized rather than sample-synchronized: every l
 
 The browser schedules audio ahead of time on a sixteenth-note grid for stable timing. Each style defines its own tempo, scale, multiple chord progressions and synth palette. A sixteen-bar form moves through Drift, Groove, Lift and Breakdown sections, with deterministic chord inversions, rests, bass variations, melodic motifs and fills. Session energy changes the arrangement density across pads, bass, drums, arpeggios and lead lines. Important events add an accent on the next beat instead of interrupting the music abruptly.
 
+The conductor remembers musical context across events. Errors create tension that decays over several bars, green tests resolve it, commits rotate the recurring motif, file changes alter harmonic color, and deployments trigger a four-bar climax. FM uses carrier/modulator synthesis, while Synthwave and Italo voices use subtle detuning for width.
+
 **Focus Mix** is enabled by default. It softens high frequencies, reduces percussion and melodic density, and smooths envelopes. It can be toggled at any time, and the master volume is always available beside the play control.
 
 ## Roadmap
