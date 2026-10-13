@@ -90,6 +90,8 @@ The conductor remembers musical context across events. Errors create tension tha
 
 The sound engine gives pads, basses, plucks, leads and accents their own multi-oscillator voice architecture in every style. Filter envelopes, stereo placement, vibrato and style-specific FM operators feed a master chain with chorus, tempo delay, convolution reverb, soft saturation and compression. Drums combine synthesized bodies with filtered noise instead of relying on bare clicks.
 
+Synthwave uses custom band-limited analog waves, wide detuned pads, a rounded sub-supported bass and a darker, lower, less frequent arpeggio. Its chorus and dotted-eighth delay are intentionally stronger, while hats and snares are softened to keep the mix warm rather than arcade-like.
+
 **Focus Mix** is enabled by default. It softens high frequencies, reduces percussion and melodic density, and smooths envelopes. It can be toggled at any time, and the master volume is always available beside the play control.
 
 ## Roadmap

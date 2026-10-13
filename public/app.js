@@ -51,6 +51,8 @@ let chorusWet;
 let chorusLfo;
 let chorusDepth;
 let noiseBuffer;
+let warmSawWave;
+let softPulseWave;
 let schedulerTimer;
 let visualTimer;
 let nextNoteTime = 0;
@@ -106,6 +108,20 @@ function saturationCurve(amount = 1.8) {
   return curve;
 }
 
+function createAnalogWaves() {
+  const harmonics = 24;
+  const real = new Float32Array(harmonics);
+  const sawImag = new Float32Array(harmonics);
+  const pulseImag = new Float32Array(harmonics);
+  for (let harmonic = 1; harmonic < harmonics; harmonic += 1) {
+    const rolloff = Math.exp(-harmonic / 9);
+    sawImag[harmonic] = ((harmonic % 2 ? 1 : -1) / harmonic) * rolloff;
+    pulseImag[harmonic] = harmonic % 2 ? (1 / harmonic) * Math.exp(-harmonic / 7) : 0;
+  }
+  warmSawWave = audio.createPeriodicWave(real, sawImag);
+  softPulseWave = audio.createPeriodicWave(real, pulseImag);
+}
+
 function setupAudio() {
   audio = new AudioContext();
   musicBus = audio.createGain();
@@ -148,6 +164,7 @@ function setupAudio() {
   musicBus.connect(chorusDelay).connect(chorusWet).connect(toneFilter);
   chorusLfo.connect(chorusDepth).connect(chorusDelay.delayTime);
   chorusLfo.start();
+  createAnalogWaves();
   noiseBuffer = createNoiseBuffer();
   updateMix();
 }
@@ -156,21 +173,24 @@ function updateMix() {
   if (!audio) return;
   const now = audio.currentTime;
   const volume = Number(ui.volume.value) / 100;
+  const synthwave = activeStyle === "synthwave";
+  const preset = styles[activeStyle] || styles.synthwave;
   master.gain.setTargetAtTime(volume * .32, now, .04);
-  toneFilter.frequency.setTargetAtTime(focusMix ? 3600 : 8800, now, .08);
-  delayWet.gain.setTargetAtTime(focusMix ? .045 : .1, now, .08);
-  reverbWet.gain.setTargetAtTime(focusMix ? .055 : .11, now, .08);
-  chorusWet.gain.setTargetAtTime(focusMix ? .04 : .075, now, .08);
+  toneFilter.frequency.setTargetAtTime(focusMix ? (synthwave ? 3100 : 3600) : 8200, now, .08);
+  delay.delayTime.setTargetAtTime(60 / preset.bpm * .75, now, .08);
+  delayWet.gain.setTargetAtTime(focusMix ? (synthwave ? .07 : .045) : .11, now, .08);
+  reverbWet.gain.setTargetAtTime(focusMix ? (synthwave ? .08 : .055) : .12, now, .08);
+  chorusWet.gain.setTargetAtTime(focusMix ? (synthwave ? .085 : .04) : (synthwave ? .13 : .075), now, .08);
 }
 
 function voiceProfile(style, layer, fallbackWave) {
   const profiles = {
     synthwave: {
-      pad: [["sawtooth", 0, -9, .42], ["sawtooth", 0, 9, .42], ["triangle", -12, 0, .2]],
-      bass: [["sawtooth", 0, 0, .62], ["square", -12, 0, .32]],
-      pluck: [["sawtooth", 0, -4, .7], ["square", 12, 3, .22]],
-      lead: [["sawtooth", 0, -6, .48], ["sawtooth", 0, 6, .48]],
-      accent: [["sawtooth", 0, -7, .45], ["sawtooth", 0, 7, .45], ["square", 12, 0, .14]]
+      pad: [["warmSaw", 0, -11, .4], ["warmSaw", 0, 11, .4], ["triangle", -12, 0, .18]],
+      bass: [["warmSaw", 0, 0, .68], ["softPulse", -12, -2, .25]],
+      pluck: [["triangle", 0, 0, .68], ["warmSaw", 0, -4, .22]],
+      lead: [["warmSaw", 0, -7, .42], ["warmSaw", 0, 7, .42], ["triangle", -12, 0, .16]],
+      accent: [["warmSaw", 0, -8, .4], ["warmSaw", 0, 8, .4], ["triangle", -12, 0, .15]]
     },
     chiptune: {
       pad: [["triangle", 0, 0, .68], ["square", 12, 0, .16]],
@@ -223,7 +243,9 @@ function synth(note, when, duration, options = {}) {
   for (const [wave, octave, detune, weight] of profile) {
     const oscillator = audio.createOscillator();
     const oscillatorGain = audio.createGain();
-    oscillator.type = wave;
+    if (wave === "warmSaw") oscillator.setPeriodicWave(warmSawWave);
+    else if (wave === "softPulse") oscillator.setPeriodicWave(softPulseWave);
+    else oscillator.type = wave;
     oscillator.frequency.setValueAtTime(midi(note + octave), when);
     oscillator.detune.value = detune + (options.detune || 0);
     oscillatorGain.gain.value = weight;
@@ -289,9 +311,12 @@ function noiseHit(when, type) {
   const panner = audio.createStereoPanner();
   source.buffer = noiseBuffer;
   filter.type = "highpass";
-  filter.frequency.value = type === "hat" ? 6200 : 1500;
-  const duration = type === "hat" ? .045 : .15;
-  const level = type === "hat" ? (focusMix ? .008 : .015) : (focusMix ? .018 : .032);
+  const synthwave = activeStyle === "synthwave";
+  filter.frequency.value = type === "hat" ? (synthwave ? 4800 : 6200) : (synthwave ? 900 : 1500);
+  const duration = type === "hat" ? (synthwave ? .065 : .045) : (synthwave ? .22 : .15);
+  const level = type === "hat"
+    ? (focusMix ? (synthwave ? .005 : .008) : .013)
+    : (focusMix ? (synthwave ? .014 : .018) : .029);
   amp.gain.setValueAtTime(level, when);
   amp.gain.exponentialRampToValueAtTime(.0001, when + duration);
   panner.pan.value = type === "hat" ? .28 : -.12;
@@ -385,6 +410,7 @@ function scheduleStep(step, when) {
   if (step % 16 === 0 && pendingStyle) {
     activeStyle = pendingStyle;
     pendingStyle = undefined;
+    updateMix();
   }
   const preset = styles[activeStyle] || styles.synthwave;
   const beat = step % 16;
@@ -451,18 +477,22 @@ function scheduleStep(step, when) {
     [2, 1, 0, 1, 2, 0, 1, 0],
     [0, 1, 0, 2, 1, 2, 0, 1]
   ];
-  const arpRate = focusMix ? 4 : energy > .68 || isLift ? 1 : 2;
+  const arpRate = activeStyle === "synthwave"
+    ? (focusMix ? 8 : energy > .72 || isLift ? 2 : 4)
+    : (focusMix ? 4 : energy > .68 || isLift ? 1 : 2);
   const arpPattern = arpPatterns[(Math.floor(variation(bar, 3) * arpPatterns.length) + conductor.motif) % arpPatterns.length];
   const leaveSpace = variation(bar * 16 + beat, 4) < (focusMix ? .22 : .1);
   if (!isBreakdown && !leaveSpace && beat % arpRate === 0) {
-    const note = chord[arpPattern[Math.floor(beat / arpRate) % arpPattern.length]] + 12;
-    synth(note, when, sixteenth * (focusMix ? 2.8 : 1.5), {
+    const arpOctave = activeStyle === "synthwave" && focusMix ? 0 : 12;
+    const note = chord[arpPattern[Math.floor(beat / arpRate) % arpPattern.length]] + arpOctave;
+    const pluckDuration = activeStyle === "synthwave" ? (focusMix ? 5.5 : 2.4) : (focusMix ? 2.8 : 1.5);
+    synth(note, when, sixteenth * pluckDuration, {
       layer: "pluck",
       wave: preset.lead,
-      gain: focusMix ? .009 : .016 + energy * .006,
-      attack: .015,
-      release: focusMix ? .18 : .08,
-      cutoff: focusMix ? 2000 : 4800
+      gain: focusMix ? (activeStyle === "synthwave" ? .0065 : .009) : .014 + energy * .005,
+      attack: activeStyle === "synthwave" ? .035 : .015,
+      release: activeStyle === "synthwave" ? .28 : focusMix ? .18 : .08,
+      cutoff: activeStyle === "synthwave" ? (focusMix ? 1350 : 2800) : focusMix ? 2000 : 4800
     });
   }
 
@@ -515,6 +545,7 @@ function startSequencer() {
   clearInterval(visualTimer);
   activeStyle = station.style;
   pendingStyle = undefined;
+  updateMix();
   nextNoteTime = audio.currentTime + .06;
   schedulerTimer = setInterval(scheduler, 25);
   visualTimer = setInterval(animateVisualizer, 80);
