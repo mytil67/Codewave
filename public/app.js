@@ -1,18 +1,18 @@
 const styles = {
   synthwave: {
-    bpm: 98, root: 45, scale: [0, 2, 3, 5, 7, 8, 10], progression: [0, 5, 3, 6],
+    bpm: 98, root: 45, scale: [0, 2, 3, 5, 7, 8, 10], progressions: [[0, 5, 3, 6], [0, 3, 5, 4], [5, 3, 0, 6], [0, 5, 2, 4]],
     lead: "sawtooth", bass: "sawtooth", pad: "triangle", title: "Midnight Compile"
   },
   chiptune: {
-    bpm: 136, root: 60, scale: [0, 2, 4, 5, 7, 9, 11], progression: [0, 3, 5, 4],
+    bpm: 136, root: 60, scale: [0, 2, 4, 5, 7, 9, 11], progressions: [[0, 3, 5, 4], [0, 5, 3, 6], [3, 4, 0, 5], [0, 2, 5, 4]],
     lead: "square", bass: "square", pad: "square", title: "8-Bit Build"
   },
   fm: {
-    bpm: 108, root: 50, scale: [0, 2, 3, 5, 7, 9, 10], progression: [0, 2, 5, 3],
+    bpm: 108, root: 50, scale: [0, 2, 3, 5, 7, 9, 10], progressions: [[0, 2, 5, 3], [0, 5, 2, 4], [3, 5, 0, 2], [0, 3, 6, 4]],
     lead: "sine", bass: "triangle", pad: "sine", title: "Operator Flow"
   },
   italo: {
-    bpm: 118, root: 50, scale: [0, 2, 4, 5, 7, 9, 11], progression: [0, 5, 3, 6],
+    bpm: 118, root: 50, scale: [0, 2, 4, 5, 7, 9, 11], progressions: [[0, 5, 3, 6], [0, 3, 5, 4], [5, 6, 0, 3], [0, 5, 4, 3]],
     lead: "sawtooth", bass: "square", pad: "sawtooth", title: "Deploy to Milano"
   }
 };
@@ -23,6 +23,7 @@ const ui = {
   track: document.getElementById("track"),
   style: document.getElementById("style"),
   bpm: document.getElementById("bpm"),
+  scene: document.getElementById("scene"),
   listeners: document.getElementById("listeners"),
   visualizer: document.getElementById("visualizer"),
   energy: document.getElementById("energy"),
@@ -163,8 +164,19 @@ function noiseHit(when, type) {
   source.stop(when + duration);
 }
 
-function chordNotes(preset, degree) {
-  return [0, 2, 4].map(offset => scaleNote(preset, degree + offset));
+function variation(bar, salt = 0) {
+  const value = Math.sin((bar + 1) * 12.9898 + salt * 78.233) * 43758.5453;
+  return value - Math.floor(value);
+}
+
+function sceneForBar(bar) {
+  return ["DRIFT", "GROOVE", "LIFT", "BREAKDOWN"][Math.floor((bar % 16) / 4)];
+}
+
+function chordNotes(preset, degree, inversion = 0) {
+  const notes = [0, 2, 4].map(offset => scaleNote(preset, degree + offset));
+  for (let index = 0; index < inversion; index += 1) notes[index] += 12;
+  return notes.sort((a, b) => a - b);
 }
 
 function scheduleAccent(when, preset, chord) {
@@ -190,12 +202,18 @@ function scheduleStep(step, when) {
   const preset = styles[activeStyle] || styles.synthwave;
   const beat = step % 16;
   const bar = Math.floor(step / 16);
-  const degree = preset.progression[bar % preset.progression.length];
-  const chord = chordNotes(preset, degree);
+  const section = Math.floor((bar % 16) / 4);
+  const progression = preset.progressions[section];
+  const degree = progression[bar % 4];
+  const inversion = focusMix ? bar % 2 : Math.floor(variation(bar, 1) * 3);
+  const chord = chordNotes(preset, degree, inversion);
   const sixteenth = 60 / preset.bpm / 4;
   const energy = station.energy;
+  const isBreakdown = section === 3 && bar % 4 < 2;
+  const isLift = section === 2;
 
   if (beat === 0) {
+    ui.scene.textContent = sceneForBar(bar);
     const padDuration = sixteenth * 15.4;
     chord.forEach((note, index) => synth(note, when + index * .012, padDuration, {
       wave: preset.pad,
@@ -207,12 +225,24 @@ function scheduleStep(step, when) {
     }));
   }
 
-  if (beat % 4 === 0) kick(when, focusMix ? .68 : .9);
-  if ((beat === 4 || beat === 12) && energy > .25) noiseHit(when, "snare");
-  if ((focusMix ? beat % 4 === 2 : beat % 2 === 0) && energy > .32) noiseHit(when, "hat");
+  if (beat % 4 === 0 && (!isBreakdown || beat === 0)) kick(when, focusMix ? .68 : .9);
+  if (!isBreakdown && (beat === 4 || beat === 12) && energy > .25) noiseHit(when, "snare");
+  const hatRate = focusMix ? 4 : isLift ? 1 : 2;
+  if (!isBreakdown && beat % hatRate === 2 % hatRate && energy > .32) noiseHit(when, "hat");
 
-  if ([0, 3, 8, 11].includes(beat)) {
-    const bassDegree = beat === 11 ? degree + 4 : degree;
+  const bassPatterns = [
+    [[0, 0], [3, 0], [8, 0], [11, 4]],
+    [[0, 0], [4, 0], [7, 4], [10, 0], [14, 2]],
+    [[0, 0], [2, 0], [6, 4], [8, 0], [12, 5], [14, 4]],
+    [[0, 0], [8, 0], [12, 4]]
+  ];
+  const bassPatternIndex = focusMix
+    ? (isBreakdown ? 3 : section % 2)
+    : Math.floor(variation(bar, 2) * bassPatterns.length);
+  const bassPattern = bassPatterns[bassPatternIndex];
+  const bassHit = bassPattern.find(([position]) => position === beat);
+  if (bassHit) {
+    const bassDegree = degree + bassHit[1];
     synth(scaleNote(preset, bassDegree, -12), when, sixteenth * 2.5, {
       wave: preset.bass,
       gain: focusMix ? .027 : .04,
@@ -222,10 +252,17 @@ function scheduleStep(step, when) {
     });
   }
 
-  const arpRate = focusMix ? 4 : energy > .68 ? 1 : 2;
-  if (beat % arpRate === 0) {
-    const pattern = [0, 1, 2, 1, 0, 2, 1, 2];
-    const note = chord[pattern[Math.floor(beat / arpRate) % pattern.length]] + 12;
+  const arpPatterns = [
+    [0, 1, 2, 1, 0, 2, 1, 2],
+    [0, 2, 1, 2, 0, 1, 2, 1],
+    [2, 1, 0, 1, 2, 0, 1, 0],
+    [0, 1, 0, 2, 1, 2, 0, 1]
+  ];
+  const arpRate = focusMix ? 4 : energy > .68 || isLift ? 1 : 2;
+  const arpPattern = arpPatterns[Math.floor(variation(bar, 3) * arpPatterns.length)];
+  const leaveSpace = variation(bar * 16 + beat, 4) < (focusMix ? .22 : .1);
+  if (!isBreakdown && !leaveSpace && beat % arpRate === 0) {
+    const note = chord[arpPattern[Math.floor(beat / arpRate) % arpPattern.length]] + 12;
     synth(note, when, sixteenth * (focusMix ? 2.8 : 1.5), {
       wave: preset.lead,
       gain: focusMix ? .009 : .016 + energy * .006,
@@ -235,11 +272,21 @@ function scheduleStep(step, when) {
     });
   }
 
-  if (!focusMix && energy > .7 && [6, 14].includes(beat)) {
-    const melodyDegree = degree + [4, 6, 2, 5][bar % 4];
+  const melodyPositions = [[6, 14], [2, 7, 14], [4, 10, 15], [3, 11]];
+  const melodyDegrees = [[4, 6], [2, 4, 6], [5, 3, 6], [4, 2]];
+  const motif = Math.floor(variation(bar, 5) * melodyPositions.length);
+  const melodyIndex = melodyPositions[motif].indexOf(beat);
+  if (!focusMix && energy > .58 && !isBreakdown && melodyIndex >= 0) {
+    const melodyDegree = degree + melodyDegrees[motif][melodyIndex];
     synth(scaleNote(preset, melodyDegree, 12), when, sixteenth * 3.2, {
       wave: preset.lead, gain: .017, attack: .035, release: .2, cutoff: 5200
     });
+  }
+
+  const finalBar = bar % 8 === 7;
+  if (!focusMix && finalBar && energy > .5 && [12, 14, 15].includes(beat)) {
+    noiseHit(when, beat === 12 ? "snare" : "hat");
+    if (beat === 15) kick(when, .72);
   }
 
   if (beat % 4 === 0) scheduleAccent(when, preset, chord);
