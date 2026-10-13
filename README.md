@@ -4,7 +4,7 @@
 
 Codewave turns safe, anonymized development events into synthwave, chiptune, FM synth and Italo disco. The server distributes a live musical score; each listener's browser synthesizes it with the Web Audio API.
 
-This first MVP intentionally has no native audio engine, database or external service. It runs anywhere Node.js runs and can be deployed with one container.
+This first MVP intentionally has no native audio engine, database, dependency or external service. It runs anywhere Node.js runs. Docker is optional, not the main installation path.
 
 ## Quick start
 
@@ -25,6 +25,34 @@ Or use Docker:
 ```bash
 docker compose up --build
 ```
+
+## Listen to a real Codex session
+
+Start the station:
+
+```bash
+npm start
+```
+
+In a second terminal, start the local agent:
+
+```bash
+npm run agent
+```
+
+The agent automatically follows the most recently modified Codex JSONL session. It starts at the end of the file, so old activity is not replayed. Keep coding and the new events will appear on the radio.
+
+The desktop session file is treated as a best-effort adapter source rather than a stable public API. Unknown record types are ignored safely, so a future Codex format change should degrade quietly instead of leaking content or crashing the station.
+
+Options:
+
+```bash
+npm run agent -- --style chiptune
+npm run agent -- --url https://your-codewave.example
+npm run agent -- --session /path/to/rollout-session.jsonl
+```
+
+Use the `CODEWAVE_URL` environment variable instead of `--url` if preferred. Authentication uses `CODEWAVE_INGEST_TOKEN`; tokens are never accepted as command-line arguments, where they could appear in process listings.
 
 ## Send a coding event
 
@@ -56,7 +84,7 @@ The current radio is event-synchronized rather than sample-synchronized: every l
 
 ## Roadmap
 
-- Local session agent and adapters for Codex, Claude Code, Cursor, Git and test runners
+- Adapters for Claude Code, Cursor, Git and test runners
 - Deterministic, time-synchronized musical score for every listener
 - Richer synthesis, drums, transitions and musical scenes
 - Optional server-side renderer with Icecast/HLS broadcasting

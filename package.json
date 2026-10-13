@@ -7,6 +7,7 @@
   "scripts": {
     "dev": "node --watch src/server.mjs",
     "start": "node src/server.mjs",
+    "agent": "node scripts/codewave-agent.mjs",
     "demo": "node scripts/demo-session.mjs",
     "test": "node --test"
   },
