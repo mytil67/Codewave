@@ -82,6 +82,12 @@ POST /api/events ── Node.js station ── SSE /api/events
 
 The current radio is event-synchronized rather than sample-synchronized: every listener hears the same style and reacts to the same coding events, while the exact notes may vary slightly between clients. A future broadcast mode can render server-side audio and publish it to Icecast.
 
+## Musical engine
+
+The browser schedules audio ahead of time on a sixteenth-note grid for stable timing. Each style defines its own tempo, scale, four-bar chord progression and synth palette. Session energy changes the arrangement density across pads, bass, drums, arpeggios and lead lines. Important events add an accent on the next beat instead of interrupting the music abruptly.
+
+**Focus Mix** is enabled by default. It softens high frequencies, reduces percussion and melodic density, and smooths envelopes. It can be toggled at any time, and the master volume is always available beside the play control.
+
 ## Roadmap
 
 - Adapters for Claude Code, Cursor, Git and test runners

@@ -27,6 +27,15 @@
           <span class="play-icon">▶</span>
           <span><small>START LISTENING</small><strong id="play-label">Tune into the live session</strong></span>
         </button>
+        <div class="sound-controls" aria-label="Sound preferences">
+          <label class="volume-control" for="volume">
+            <span>VOLUME</span>
+            <input id="volume" type="range" min="0" max="100" value="58" aria-label="Radio volume" />
+          </label>
+          <button id="focus-mix" class="focus-mix" type="button" aria-pressed="true">
+            <span>◉</span> FOCUS MIX <strong>ON</strong>
+          </button>
+        </div>
       </section>
 
       <section class="console" aria-label="Live station console">
@@ -58,7 +67,7 @@
       <span>CODE → EVENTS → MUSIC</span>
       <a href="https://github.com/mytil67/Codewave" target="_blank" rel="noreferrer">VIEW SOURCE ↗</a>
     </footer>
-    <script type="module" src="/app.js?v=1"></script>
+    <script type="module" src="/app.js?v=2"></script>
   </body>
 </html>
 
